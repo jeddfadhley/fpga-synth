@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generic cocotb runner (Icarus backend).
+"""Generic cocotb runner (Verilator backend).
 
 Usage:
     python sim/run.py <toplevel> [test_module]
@@ -7,8 +7,9 @@ Usage:
   <toplevel>     name of the Verilog module under rtl/ (also the file stem)
   [test_module]  cocotb test module under tb/ (default: test_<toplevel>)
 
-Builds with Icarus and runs the cocotb tests. Waveforms are dumped to
-sim_build/<toplevel>/dump.fst for GTKWave.
+Builds with Verilator and runs the cocotb tests. Reference models under
+model/ are importable from tests (e.g. `from phase_accumulator import ...`).
+Waveforms are dumped to tb/dump.vcd; open with `surfer tb/dump.vcd`.
 """
 
 import sys
@@ -19,6 +20,7 @@ from cocotb_tools.runner import get_runner
 ROOT = Path(__file__).resolve().parent.parent
 RTL = ROOT / "rtl"
 TB = ROOT / "tb"
+MODEL = ROOT / "model"
 
 
 def main() -> int:
@@ -41,6 +43,9 @@ def main() -> int:
         waves=True,
         build_args=["-Wall"],
     )
+    # the runner passes its own sys.path to the simulator's Python, so this
+    # makes model/ importable from the tests
+    sys.path.insert(0, str(MODEL))
     runner.test(
         hdl_toplevel=toplevel,
         test_module=test_module,
