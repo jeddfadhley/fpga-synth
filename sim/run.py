@@ -6,7 +6,8 @@ Usage:
 
   <toplevel>     name of the Verilog module under rtl/ (also the file stem)
   [test_module]  cocotb test module under tb/ (default: test_<toplevel>)
-  -p NAME=VALUE  override a Verilog parameter, e.g. -p WIDTH=24 (repeatable)
+  -p NAME=VALUE  override a Verilog parameter, e.g. -p WIDTH=24 or
+                 -p INIT_FILE=rtl/mem/sine_1024x16.hex (repeatable)
 
 Builds with Verilator and runs the cocotb tests. Reference models under
 model/ are importable from tests (e.g. `from phase_accumulator import ...`).
@@ -25,11 +26,22 @@ TB = ROOT / "tb"
 MODEL = ROOT / "model"
 
 
-def parse_param(text: str) -> tuple[str, int]:
+def parse_param(text: str) -> tuple[str, int | str]:
+    """NAME=VALUE; integers pass through, anything else becomes a Verilog string.
+
+    String values that name an existing file are made absolute, because the
+    simulator runs from tb/ and would otherwise resolve relative paths there.
+    """
     name, sep, value = text.partition("=")
     if not sep or not name:
         raise argparse.ArgumentTypeError(f"expected NAME=VALUE, got {text!r}")
-    return name, int(value, 0)
+    try:
+        return name, int(value, 0)
+    except ValueError:
+        path = Path(value)
+        if path.exists():
+            value = str(path.resolve())
+        return name, f'"{value}"'
 
 
 def main() -> int:
