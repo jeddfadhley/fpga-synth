@@ -1,14 +1,20 @@
+# Simulation artifacts
+sim_build/
+**/sim_build/
+obj_dir/
+*.vcd
+*.fst
+results.xml
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Icarus / cocotb
+*.vvp
+
 # IDE
 .idea/
 *.iml
 
-# macOS
+# OS
 .DS_Store
-
-# Simulation outputs
-sim_build/
-__pycache__/
-*.vcd
-*.fst
-results.xml
-obj_dir/
