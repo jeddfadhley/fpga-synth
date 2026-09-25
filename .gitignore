@@ -1,0 +1,14 @@
+# IDE
+.idea/
+*.iml
+
+# macOS
+.DS_Store
+
+# Simulation outputs
+sim_build/
+__pycache__/
+*.vcd
+*.fst
+results.xml
+obj_dir/
