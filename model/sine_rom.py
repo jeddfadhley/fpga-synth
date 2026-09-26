@@ -11,7 +11,6 @@ def sine_table(addr_w, data_w):
 
 def write_hex(path, values, data_w):
     """function to write signed integers to path as two's complement hex, one per line for $readmemh"""
-    twos = []
     digits = (data_w + 3) // 4
     with open(path, "w") as f:
         for value in values:
