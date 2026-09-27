@@ -8,8 +8,9 @@ every module verified against an independent Python reference model.
 
 | Block | Status |
 |---|---|
-| Phase accumulator (NCO) | Done: RTL, model, tests |
-| Sine wavetable ROM | Next |
+| Phase accumulator | Done: RTL, model, tests |
+| Sine wavetable ROM | Done: RTL, model, tests (non-default width run pending) |
+| NCO top level (accumulator + ROM) | Next |
 | Audio output (sigma-delta) | Planned |
 | MIDI input (UART RX + parser) | Planned |
 | Note to phase-increment ROM | Planned |
@@ -37,6 +38,9 @@ Each module has a self-checking cocotb testbench, run on Verilator.
   checked every clock cycle.
 - Tests read parameters such as `WIDTH` from the design, and are re-run at
   non-default values to catch hard-coded assumptions.
+- Timing is checked as well as values: the sine ROM test checks the output
+  holds its old value until the clock edge after a new address, so a
+  combinational read fails (confirmed against a combinational copy of the ROM).
 
 ## Running the tests
 
@@ -45,6 +49,7 @@ Requires Verilator (5.x), Python 3, and cocotb 2.x.
 ```
 python3 sim/run.py phase_accumulator             # default parameters
 python3 sim/run.py phase_accumulator -p WIDTH=24 # override a parameter
+python3 sim/run.py sine_rom -p INIT_FILE=rtl/mem/sine_1024x16.hex
 ```
 
 Waveforms are written to `tb/dump.vcd` and can be viewed with
