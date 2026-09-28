@@ -22,3 +22,6 @@ __pycache__/
 # Local assistant notes
 CLAUDE.md
 .claude/
+
+# Runner output (sim/run.py, regress.py, synth.py)
+sim/results/
