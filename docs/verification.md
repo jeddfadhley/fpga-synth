@@ -13,8 +13,7 @@ not done until its testbench passes at every config in `sim/modules.py`.
    test must fail if the latency changes: see `test_sine_rom.test_latency`,
    which was confirmed to fail against a combinational ROM.
 3. **At least one case per module contradicts an assumption the design was
-   written under.** Each module's case is listed in `docs/interfaces.md`, and
-   in its test skeleton.
+   written under.** Each module's case is listed in `docs/interfaces.md`.
 4. **Read parameters from the design**, never hardcode them, so the same test
    runs at every config. Widths: `len(dut.port)`. Any integer parameter:
    `int(dut.NAME.value)` (run.py builds with Verilator `--public-params`).

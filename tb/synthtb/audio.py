@@ -84,6 +84,23 @@ def sfdr_db(samples, fs: float, guard_bins: int = 6) -> float:
     return float(20 * np.log10(mag[k] / max(others.max(), 1e-30)))
 
 
+def write_wav(samples, path, fs: int = 48_000, data_w: int = 16) -> None:
+    """Save signed DATA_W-bit samples as a 16-bit mono WAV, to listen to.
+
+    Wider or narrower samples are shifted to 16 bits. Play with
+    `afplay <path>` (macOS) or any audio player.
+    """
+    import wave
+
+    x = np.asarray(samples, dtype=np.int64)
+    x = x << (16 - data_w) if data_w <= 16 else x >> (data_w - 16)
+    with wave.open(str(path), "wb") as f:
+        f.setnchannels(1)
+        f.setsampwidth(2)
+        f.setframerate(fs)
+        f.writeframes(x.astype("<i2").tobytes())
+
+
 def check_pitch(samples, fs: float, expected_hz: float, tol_cents: float) -> dict:
     """Measure pitch and compare. Returns a record for the assert message:
 

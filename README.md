@@ -99,5 +99,5 @@ docs/         architecture, interfaces, verification, hardware
 ## Tools
 
 AI tools were used for the simulation, regression and synthesis scripts, the
-shared test helpers, testbench skeletons, the design documents in `docs/`, and
+shared test helpers, the design documents in `docs/`, and
 code review. All RTL, reference models and test checks were written by me.

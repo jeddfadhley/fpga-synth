@@ -21,8 +21,15 @@ lists what it does differently.
 | `NUM_VOICES` | 16 (default) | 1 for bring-up, the same RTL |
 
 At one voice per clock, 16 voices take 16 clocks of the ~1042 in a sample
-period. **Cycles are not the limit; multipliers and block RAM are.** That
-gives a real design choice, set by `ISSUE_INTERVAL` in `voice_scheduler`:
+period. **Extra voices are nearly free.** The pipeline's logic and multipliers
+are shared, so they don't grow with `NUM_VOICES`. Only the per-voice state
+RAMs grow (roughly 50–100 bits a voice), plus log2(N) bits in the mixer. The
+hard ceiling is cycles: about `1042 / ISSUE_INTERVAL` minus the pipeline
+latency, so around 1000 voices. In practice the mix level and musical need
+set it at 16–32.
+
+The resource trade-off is multipliers against clocks, set by
+`ISSUE_INTERVAL` in `voice_scheduler`:
 
 - **1 (default): fully pipelined.** Each stage owns its multiplier. The
   fewest clocks, the most DSP blocks.
@@ -136,8 +143,7 @@ the project is still complete.
    "16-voice polyphony by time-multiplexing one pipeline, with voice
    allocation and stealing"*, plus the utilisation numbers.
 
-**Tier 3: polish (optional).** Only if time allows; the skeletons are in
-`tb/later/`.
+**Tier 3: polish (optional).** Only if time allows.
 
 6. `polyblep` (anti-aliased saw/square), triangle, `svf`, `i2s_tx`.
 

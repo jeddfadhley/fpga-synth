@@ -13,8 +13,8 @@ Fields:
   requires files that must exist for a config to run (e.g. a generated table);
            regress.py reports the config as SKIP with the reason if one is missing
   status   "active" (in the regression), "planned" (spec only, see
-           docs/interfaces.md) or "optional" (tier 3: only if time allows;
-           its test skeleton is in tb/later/, move it to tb/ when starting)
+           docs/interfaces.md) or "optional" (tier 3: only if
+           time allows)
   tier     1 playable mono synth, 2 polyphony, 3 polish (optional)
 """
 
@@ -65,6 +65,7 @@ MODULES: dict[str, Module] = {
     "ram_1r1w": Module(
         sources=rtl("ram_1r1w"),
         configs={"default": {}, "d1": {"DEPTH": 1}, "d5": {"DEPTH": 5}},
+        status="active",
     ),
     # ---- control plane ---------------------------------------------------
     "midi_uart_rx": Module(
