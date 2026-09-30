@@ -53,11 +53,17 @@ MODULES: dict[str, Module] = {
         requires={"a8_d12": [SINE_256x12]},
         status="active",
     ),
-    # ---- infrastructure --------------------------------------------------
-    "sample_tick": Module(
-        sources=rtl("sample_tick"),
-        configs={"default": {}, "exact_divide": {"CLK_HZ": 49_152_000}},
+    # ---- tier 1: mono first sound ------------------------------------------
+    "i2s_tx": Module(
+        sources=rtl("i2s_tx"),
+        configs={"default": {}, "slot16": {"SLOT_W": 16}, "fast_bclk": {"BCLK_DIV": 4}},
     ),
+    "nco": Module(
+        sources=rtl("phase_accumulator", "sine_rom", "nco"),
+        configs={"default": {"INIT_FILE": SINE_1024x16},
+                 "p24": {"PHASE_W": 24, "INIT_FILE": SINE_1024x16}},
+    ),
+    # ---- infrastructure --------------------------------------------------
     "voice_scheduler": Module(
         sources=rtl("voice_scheduler"),
         configs={"default": {}, "one_voice": {"NUM_VOICES": 1}, "v5": {"NUM_VOICES": 5}},
@@ -99,16 +105,15 @@ MODULES: dict[str, Module] = {
         configs={"default": {}, "one_voice": {"NUM_VOICES": 1}},
     ),
     # ---- audio out -------------------------------------------------------
-    "dac_delta_sigma": Module(sources=rtl("dac_delta_sigma")),
-    "i2s_tx": Module(sources=rtl("i2s_tx"), status="optional", tier=3),
+    "dac_delta_sigma": Module(sources=rtl("dac_delta_sigma"), status="optional", tier=3),
     # ---- integration -----------------------------------------------------
     "synth_core": Module(
         sources=rtl(
-            "ram_1r1w", "sample_tick", "voice_scheduler",
+            "ram_1r1w", "i2s_tx", "voice_scheduler",
             "midi_uart_rx", "midi_parser", "note_inc_rom", "voice_allocator",
             "osc_phase", "sine_rom", "waveform_gen",
-            "envelope_exp", "vca", "voice_mixer", "dac_delta_sigma", "synth_core",
-        ),  # tier 3 adds "polyblep", "svf", "i2s_tx"
+            "envelope_exp", "vca", "voice_mixer", "synth_core",
+        ),  # stretch adds "polyblep", "svf"
         configs={"default": {"INIT_FILE": SINE_1024x16}},
     ),
 }

@@ -1,44 +1,38 @@
 # FPGA Synthesiser
 
-A MIDI-controlled polyphonic synthesiser written in Verilog, played from a
-Yamaha P-125 digital piano. The goal is a working synth on an FPGA, with
-every module verified against an independent Python reference model.
+A MIDI-controlled polyphonic synthesiser written in Verilog, running on a
+Digilent Basys 3 (Artix-7) and played from a USB MIDI keyboard. The goal is a
+working synth on an FPGA, with every module verified against an independent
+Python reference model.
 
 ## Status
 
 | Tier | Block | Status |
 |---|---|---|
-| 1 | Phase accumulator (mono reference) | Done: RTL, model, tests |
+| 1 | Blinky on the Basys 3 (toolchain check) | Next |
+| 1 | Phase accumulator | Done: RTL, model, tests |
 | 1 | Sine wavetable ROM | Done: RTL, model, tests (non-default width run pending) |
-| 1 | RAM, sample tick, voice scheduler | Next |
-| 1 | Per-voice oscillator, waveforms (sine, saw, square), mixer | Planned |
-| 1 | Delta-sigma audio output | Planned |
-| 1 | MIDI input (UART RX, parser, note-to-increment ROM) | Planned |
-| 1 | Exponential ADSR, VCA | Planned |
-| 2 | Polyphony: 8–16 voices, voice stealing, sustain pedal | Planned |
-| 3 | PolyBLEP anti-aliasing, state-variable filter, I²S DAC | Optional |
+| 1 | I²S transmitter + sample tick, mono NCO: **first sound** | Planned |
+| 1 | Note-to-increment ROM, UART RX, MIDI parser, Mac MIDI bridge | Planned |
+| 1 | Envelope, VCA | Planned |
+| 2 | RAM for per-voice state | Done: RTL, tests |
+| 2 | Polyphony: time-multiplexed voices, allocation, stealing, sustain; mixer | Planned |
+| 3 | PolyBLEP, resonant filter, detune (stretch) | Optional |
 
-Tier 1 is a playable mono synth, tier 2 adds polyphony, and tier 3 is
-optional polish.
-
-Target board not yet chosen; the design is kept vendor-neutral. Measured so far
-(Yosys): the 1024×16 sine ROM maps to one block RAM on Gowin and Xilinx 7-series
-and four on iCE40, with no logic.
+Hardware: Digilent Basys 3 (Artix-7), MAX98357A I²S amplifier, played from a
+Keystation Mini 32 or Yamaha P-125 through a small Mac-side MIDI bridge.
 
 ## Architecture
 
-One voice pipeline, time-multiplexed across up to 16 voices: at 50 MHz there
-are about 1042 clocks per 48 kHz sample, and the pipeline handles one voice per
-clock. Per-voice state (phase, envelope, filter) lives in small RAMs indexed by
-voice number. Mono bring-up is the same RTL with `NUM_VOICES = 1`.
+```
+Keyboard --USB--> Mac (MIDI bridge) --UART--> Basys 3:
+  UART RX -> MIDI parser -> voices -> mixer -> I2S TX --> MAX98357A amp --> speaker
+```
 
-```
-MIDI in -> UART RX -> parser -> voice allocator (voice table, stealing, sustain)
-                                        | per-voice increment, gate, velocity
-                                        v
-48 kHz tick -> scheduler -> phase -> waveform -> envelope -> VCA -> filter -> mixer -> DAC
-                            (slot per voice per sample: valid, voice, last, data)
-```
+The 100 MHz clock gives exactly 2048 clocks per sample (fs = 48 828.125 Hz, set
+by the I²S frame). Polyphony uses one voice pipeline, time-multiplexed: it
+handles one voice per clock, with per-voice state (phase, envelope) in small
+RAMs indexed by voice number. A mono chain comes first, to get sound early.
 
 Details: `docs/architecture.md` (design and trade-offs), `docs/interfaces.md`
 (every module's ports, fixed-point formats and latency), `docs/hardware.md`

@@ -15,17 +15,18 @@ lists what it does differently.
 
 | Quantity | Value | Notes |
 |---|---|---|
-| `CLK_HZ` | 50 MHz (default) | 49.152 MHz = 1024 × 48 kHz divides exactly, if the board's PLL can make it |
-| `SAMPLE_HZ` | 48 kHz | |
-| Clocks per sample | 1041.67 | `sample_tick` averages this exactly (fractional divider) |
-| `NUM_VOICES` | 16 (default) | 1 for bring-up, the same RTL |
+| `CLK_HZ` | 100 MHz | Basys 3 oscillator (see `docs/hardware.md`) |
+| BCLK | 100 MHz / 32 = 3.125 MHz | I²S bit clock |
+| Sample rate | 3.125 MHz / 64 = 48 828.125 Hz | one I²S frame of 2 × 32-bit slots |
+| Clocks per sample | **2048** (exact) | the sample tick comes from the I²S frame, so nothing drifts |
+| `NUM_VOICES` | 16 (default) | |
 
-At one voice per clock, 16 voices take 16 clocks of the ~1042 in a sample
+At one voice per clock, 16 voices take 16 clocks of the 2048 in a sample
 period. **Extra voices are nearly free.** The pipeline's logic and multipliers
 are shared, so they don't grow with `NUM_VOICES`. Only the per-voice state
 RAMs grow (roughly 50–100 bits a voice), plus log2(N) bits in the mixer. The
-hard ceiling is cycles: about `1042 / ISSUE_INTERVAL` minus the pipeline
-latency, so around 1000 voices. In practice the mix level and musical need
+hard ceiling is cycles: about `2048 / ISSUE_INTERVAL` minus the pipeline
+latency, so around 2000 voices. In practice the mix level and musical need
 set it at 16–32.
 
 The resource trade-off is multipliers against clocks, set by
@@ -48,12 +49,11 @@ The spare cycles also make 2× oversampling of the filter free (see `svf`).
                           note_inc_rom ◄───┤  increment, inc_recip   │
                                            ▼ read port               │
                      datapath (one slot per voice per sample)        │
- sample_tick ─► voice_scheduler ─► osc_phase ─► waveform_gen ─► envelope_exp ─► vca ─► svf ─► voice_mixer
-   (48 kHz)     slots 0..N-1       phase RAM    sine_rom,        level RAM                 state   sum N,
+ i2s_tx tick ─► voice_scheduler ─► osc_phase ─► waveform_gen ─► envelope_exp ─► vca ─► svf ─► voice_mixer
+ (per frame)    slots 0..N-1       phase RAM    sine_rom,        level RAM                 state   sum N,
                 + voice fields                  polyblep                                   RAM     saturate
                                                                                                     │ one sample
-                                                                                 dac_delta_sigma ◄──┤ per frame
-                                                                                 i2s_tx ◄───────────┘
+                                                                   amp ◄── i2s_tx ◄─────────────────┘ per frame
 ```
 
 ## The voice slot
@@ -75,8 +75,10 @@ interview: that is the whole argument for time-multiplexing.
 
 Consequences:
 
-- **Mono is `NUM_VOICES = 1`**, the same RTL. There is no separate mono
-  design to throw away.
+- **The slot pipeline arrives at step 7** (below). First sound and the
+  playable mono synth use a simpler mono chain (`nco`: your
+  `phase_accumulator` + `sine_rom`), which stays afterwards as the tested
+  reference. `ram_1r1w` is already built for step 7.
 - **No backpressure.** The scheduler's fixed timetable guarantees every stage
   can accept every slot, so there is no `ready` signal. A simulation-only check
   in `voice_scheduler` asserts that a frame finishes before the next tick.
@@ -120,38 +122,40 @@ Consequences:
 
 ## Tiers and bring-up order
 
-Each tier ends with a result you can put on a CV. Stop after any of them and
-the project is still complete.
+Mono first, for the fastest route to real sound on the Basys 3; then
+polyphony. Each milestone is a result you can put on a CV.
 
-**Tier 1: playable mono synth** (`NUM_VOICES = 1`)
+**Tier 1: playable mono synth**
 
-1. `ram_1r1w`, `sample_tick`, `voice_scheduler`: small, and everything else
-   sits on them.
-2. **First sound:** `osc_phase` + `waveform_gen` (sine, naive saw/square) +
-   `voice_mixer` + `dac_delta_sigma`, with a hardcoded increment. Pitch-checked
-   by FFT in simulation. *CV: "oscillator pitch and spur level verified by FFT
-   against a Python model"*, with the measured numbers.
-3. **MIDI:** `midi_uart_rx`, `midi_parser`, `note_inc_rom`, `voice_allocator`
-   (one voice). Play it from the P-125.
-4. **Shape:** `envelope_exp`, `vca`. *CV: "MIDI-controlled synthesiser on an
-   FPGA, played from a keyboard"*, plus a video.
+0. **Blinky:** a counter drives LED0. It proves the toolchain → bitstream →
+   board → constraints path. *(Hardware milestone 0)*
+1. `phase_accumulator` ✅
+2. `sine_rom` ✅, addressed by the top `ADDR_W` bits of the phase
+3. **`i2s_tx`** generates BCLK and LRCLK, shifts 32-bit slots, and produces the
+   sample tick once per frame. The test checks bit order, MSB timing (one
+   BCLK after the LRCLK edge, standard I²S) and a 2048-clock frame. Then
+   **`nco`** (accumulator + ROM) and a board top level.
+   **→ Milestone A: first sound.** A fixed A4 through the amp.
+4. **`note_inc_rom`** from a Python generator in `model/`, using fs =
+   48 828.125.
+5. **`midi_uart_rx` + `midi_parser`** (`BAUD` a parameter: 115 200 from the Mac
+   bridge, 31 250 for real MIDI later), plus `tools/midi_bridge.py` (mido in,
+   pyserial out). **→ Milestone B: keys change the note.**
+6. **Envelope:** `envelope_exp` + `vca`. The mono synth is complete; a video
+   of it playing goes on the CV.
 
 **Tier 2: polyphony.** The main interview talking point.
 
-5. `NUM_VOICES` = 8–16, allocator stealing and CC64 sustain. Mostly parameters
-   and allocator logic, since the datapath is already slot-based. *CV:
-   "16-voice polyphony by time-multiplexing one pipeline, with voice
-   allocation and stealing"*, plus the utilisation numbers.
+7. **Time-multiplexed voices:** `voice_scheduler`, `osc_phase` (on
+   `ram_1r1w` ✅), `waveform_gen`, per-voice envelope, and `voice_allocator`
+   (stealing, CC64 sustain), inside the 2048-clock budget.
+8. **Mixer / output:** `voice_mixer`, with the accumulator wider than 16 bits
+   and scaled back down before `i2s_tx`.
 
-**Tier 3: polish (optional).** Only if time allows.
-
-6. `polyblep` (anti-aliased saw/square), triangle, `svf`, `i2s_tx`.
-
-`phase_accumulator` and `sine_rom` (done) carry over: the accumulator's adder
-is the core of `osc_phase` and it stays as the tested mono reference;
-`sine_rom` is used unchanged inside `waveform_gen`.
+**Stretch (optional):** PolyBLEP saw/square, triangle, `svf` (resonant
+filter), wavetable morphing, unison/detune.
 
 ## Hardware
 
-See `docs/hardware.md`: board choice, MIDI input from a USB-only P-125, and
-audio output.
+See `docs/hardware.md`: the Basys 3, pins, clocking, the Mac MIDI bridge
+(Keystation Mini 32 or P-125) and the I²S amp.

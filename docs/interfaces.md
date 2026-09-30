@@ -1,9 +1,10 @@
 # Module interfaces
 
-The spec to write the RTL against. Modules are grouped into tiers (see
-`docs/architecture.md`): **tier 1** is the playable mono synth, **tier 2** is
-polyphony, and **tier 3** is optional polish. Tier 3 sections and ports are
-marked *(tier 3)*; leave them out until then.
+The spec to write the RTL against. The bring-up order is in
+`docs/architecture.md`: **tier 1** is the playable mono synth (`nco`,
+`i2s_tx`, MIDI, envelope), **tier 2** is polyphony (the slot-based modules
+below), and stretch items are optional. Stretch sections and ports are marked
+*(tier 3)*; leave them out until then.
 
 For each module: parameters, ports with
 fixed-point formats, latency, and the behaviour that must hold. The internals
@@ -22,8 +23,13 @@ two's complement with m integer bits including the sign.
 
 | Parameter | Default | Meaning |
 |---|---|---|
-| `CLK_HZ` | 50_000_000 | system clock |
-| `SAMPLE_HZ` | 48_000 | audio sample rate |
+| `CLK_HZ` | 100_000_000 | system clock (Basys 3) |
+| `BCLK_DIV` | 32 | system clocks per I²S bit clock |
+| `SLOT_W` | 32 | bits per I²S slot; a frame is 2 slots |
+
+The sample rate, `CLK_HZ / (BCLK_DIV × 2 × SLOT_W)` = 48 828.125 Hz, isn't
+an integer, so it is never a Verilog parameter. It exists in the RTL only as
+"one `i2s_tx` tick per 2048 clocks". Python models use 48828.125 exactly.
 | `NUM_VOICES` | 16 | voices; 1 for mono bring-up |
 | `VOICE_W` | `$clog2(NUM_VOICES)` | **careful:** 0 when `NUM_VOICES = 1`. Use `(NUM_VOICES > 1) ? $clog2(NUM_VOICES) : 1` |
 | `PHASE_W` | 32 | phase and increment, UQ0.PHASE_W |
@@ -83,21 +89,28 @@ documented behaviour anyway. **No reset** (see the slot rules above).
 **Assumption-breaking cases:** `DEPTH = 1` (zero-width address trap) and
 `DEPTH = 5`.
 
-### `sample_tick`: 48 kHz strobe from the system clock
+### `nco`: mono oscillator for first sound (tier 1)
+
+Your `phase_accumulator` and `sine_rom` wired together: your first module
+that instantiates others. It stays as the tested mono reference once the
+slot pipeline replaces it.
 
 | Parameter | Meaning |
 |---|---|
-| `CLK_HZ`, `SAMPLE_HZ` | |
+| `PHASE_W`, `ADDR_W`, `DATA_W`, `INIT_FILE` | passed down to the submodules; `ADDR_W <= PHASE_W` |
 
 | Port | Dir | Width | Notes |
 |---|---|---|---|
-| `clk`, `rst` | in | 1 | |
-| `tick` | out | 1 | one-clock pulse, average rate exactly `SAMPLE_HZ` |
+| `clk`, `rst` | in | 1 | `rst` resets the accumulator only |
+| `en` | in | 1 | advance one sample: the `i2s_tx` tick |
+| `increment` | in | `PHASE_W` | UQ0.PHASE_W, fraction of a cycle per sample |
+| `sample` | out | `DATA_W` | Q1.(DATA_W−1) |
+| `sample_valid` | out | 1 | *(optional)* `en` delayed to line up with `sample` |
 
-Fractional divider: add `SAMPLE_HZ` each clock and tick on reaching `CLK_HZ`,
-keeping the remainder. This is the same idea as the phase accumulator. The
-spacing is ⌊ratio⌋ or ⌈ratio⌉ clocks and never drifts. With
-`CLK_HZ = 49_152_000` the spacing is exactly 1024 (the `exact_divide` config).
+The address is `phase[PHASE_W-1 -: ADDR_W]`. **Latency:** 2 clocks from `en`
+(the accumulator register, then the ROM register). `f_out = increment × fs /
+2^PHASE_W`. **Assumption-breaking:** increment above half a cycle (it aliases,
+and the model must still match); `PHASE_W = 24`.
 
 ### `voice_scheduler`: issue one slot per voice per sample
 
@@ -109,7 +122,7 @@ spacing is ⌊ratio⌋ or ⌈ratio⌉ clocks and never drifts. With
 | Port | Dir | Width | Notes |
 |---|---|---|---|
 | `clk`, `rst` | in | 1 | |
-| `tick` | in | 1 | from `sample_tick` |
+| `tick` | in | 1 | from `i2s_tx` |
 | `vt_rd_voice` | out | `VOICE_W` | voice-table read address |
 | `vt_rd_*` | in | per field | voice-table fields, 1 clock after `vt_rd_voice` |
 | `out_valid/voice/last` | out | slot | voices 0..N-1 in order after each `tick` |
@@ -188,11 +201,11 @@ Pitch bend could be added later as a new `ev_type`.
 |---|---|---|---|
 | `clk` | in | 1 | |
 | `note` | in | 7 | MIDI note 0..127 |
-| `increment` | out | `PHASE_W` | UQ0.PHASE_W: `round(f × 2^PHASE_W / SAMPLE_HZ)`, f = 440·2^((n−69)/12) |
+| `increment` | out | `PHASE_W` | UQ0.PHASE_W: `round(f × 2^PHASE_W / 48828.125)`, f = 440·2^((n−69)/12) |
 | `inc_recip` | out | `RECIP_W` | *(tier 3)* `2^PHASE_W / increment`, for PolyBLEP's `t/dt` |
 
 **Latency:** 1 (same as `sine_rom`). The range of `inc_recip` sets its
-format: about 3.8 at note 127 and about 5870 at note 0 (48 kHz). So it needs
+format: about 3.9 at note 127 and about 5970 at note 0 (fs = 48 828.125 Hz). So it needs
 13 integer bits; decide the fraction bits from PolyBLEP's accuracy (**open**:
 suggest UQ13.11). Note 127 (12.5 kHz) is above fs/4, and the model should
 still produce a correct value.
@@ -399,7 +412,7 @@ every voice at −full scale.
 
 ## Audio out
 
-### `dac_delta_sigma`
+### `dac_delta_sigma` *(stretch: replaced by the I²S amp)*
 
 | Parameter | Meaning |
 |---|---|
@@ -418,37 +431,55 @@ works by averaging `dac_out` over a window: the mean must track the input.
 **Assumption-breaking:** ±full-scale input; zero input (the idle pattern must
 stay bounded).
 
-### `i2s_tx` *(tier 3, optional)*
+### `i2s_tx`: I²S transmitter and sample tick (tier 1)
+
+Drives the MAX98357A amp and defines the sample rate for the whole synth.
 
 | Parameter | Meaning |
 |---|---|
-| `CLK_HZ`, `SAMPLE_HZ`, `DATA_W`, `SLOT_W` (32) | |
+| `BCLK_DIV` | system clocks per BCLK (32 → 3.125 MHz); even |
+| `SLOT_W` | bits per slot (32) |
+| `DATA_W` | sample width (16) |
 
 | Port | Dir | Width | Notes |
 |---|---|---|---|
 | `clk`, `rst` | in | 1 | |
-| `sample_l`, `sample_r` | in | `DATA_W` | Q1.(DATA_W−1), latched on `load` |
-| `load` | in | 1 | new frame available |
-| `bclk`, `lrclk`, `sdata` | out | 1 | standard I²S: MSB one BCLK after the LRCLK edge |
+| `sample_l`, `sample_r` | in | `DATA_W` | Q1.(DATA_W−1), captured at `tick` (mono: the same sample on both) |
+| `tick` | out | 1 | one-clock pulse per frame (every `BCLK_DIV × 2 × SLOT_W` = 2048 clocks): the synth's sample tick |
+| `i2s_bclk`, `i2s_lrclk`, `i2s_data` | out | 1 | registered; to Pmod JA1–3 |
 
-BCLK = 64·fs = 3.072 MHz, which isn't an integer divide of 50 MHz. Use a
-fractional divider (PCM5102-style DACs tolerate the jitter), or run
-`CLK_HZ = 49.152 MHz`.
+Standard (Philips) I²S:
+- `i2s_lrclk` is low for the left slot and high for the right; it changes on
+  a BCLK falling edge.
+- The **MSB appears one BCLK after the LRCLK edge**.
+- Data changes on BCLK falling edges; the amp samples on rising edges.
+- The 16-bit sample is MSB-aligned in the 32-bit slot; the rest are zeros.
+
+`i2s_bclk` is an ordinary registered output toggling every `BCLK_DIV/2`
+clocks. It drives a pin only and is never used as a clock inside the FPGA, so
+everything stays in the one 100 MHz domain.
+
+**Open:** capture both samples at `tick`, or each at its own slot start.
+Capturing at `tick` means a new sample can never tear across a frame.
+
+The test decodes the waveform from the pins: bit order, MSB timing, frame
+period (2048 clocks), and that left and right carry what was loaded.
+**Assumption-breaking:** the most negative sample `0x8000` (MSB first, sign
+kept); `SLOT_W = 16` or `BCLK_DIV = 4`, so nothing assumes 32/32.
 
 ---
 
 ## Integration: `synth_core`
 
-A board-independent top level: control plane, datapath and outputs. A
-per-board `top_<board>.v` later adds the PLL and pin mapping; vendor
-primitives live only there.
+A board-independent top level: control plane, datapath and outputs.
+`top_basys3.v` wraps it with the pin names from `docs/hardware.md`. Any
+vendor primitive lives only there.
 
 | Port | Dir | Notes |
 |---|---|---|
 | `clk`, `rst` | in | |
-| `midi_rx` | in | asynchronous |
+| `uart_rx` | in | asynchronous; from the Mac bridge via the USB-UART |
 | `wave_sel`, envelope coefs | in | constants at first; later from CCs. *(tier 3: `cutoff_f`, `damping_q`, `filter_mode`)* |
-| `dac_out` | out | |
-| `i2s_bclk`, `i2s_lrclk`, `i2s_sdata` | out | *(tier 3)* |
+| `i2s_bclk`, `i2s_lrclk`, `i2s_data` | out | to the amp |
 | `mix_valid`, `mix_sample` | out | for the testbench (pitch/FFT checks) |
 | `voice_active` | out | for the testbench and debug LEDs |

@@ -25,3 +25,6 @@ CLAUDE.md
 
 # Runner output (sim/run.py, regress.py, synth.py)
 sim/results/
+
+# FPGA build output (sim/fpga.py)
+build/

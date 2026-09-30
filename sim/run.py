@@ -27,6 +27,11 @@ summary line, each a JSON object behind a fixed prefix:
     SYNTH_RESULT  {"module": ..., "test": ..., "status": "PASS"|"FAIL"|"SKIP", ...}
     SYNTH_SUMMARY {"module": ..., "status": "PASS"|"FAIL"|"ERROR", "replay": ...}
 
+Each failing test also gets one line in the triage format, carrying the
+assert message (write asserts as key=value pairs, e.g. expected=.. got=..):
+
+    FAIL test=<name> t=<sim time>ns module=<m> config=<c> seed=<n> <assert message>
+
 The same data is written to sim/results/<toplevel>/<config>/summary.json.
 Exit code: 0 all passed, 1 a test failed, 2 build error, crash or timeout.
 The schema is described in docs/verification.md.
@@ -243,6 +248,13 @@ def main() -> int:
                details: list[str]) -> int:
         for t in tests:
             emit("SYNTH_RESULT", {**base, "seed": seed, **t})
+        for t in tests:
+            if t["status"] == "FAIL":
+                msg = (t["message"] or "").removeprefix("AssertionError: ")
+                print(f"FAIL test={t['test']} t={t['sim_time_ns']:g}ns module={toplevel} "
+                      f"config={config} seed={seed} {msg}".rstrip(), flush=True)
+        if status == "ERROR":
+            print(f"ERROR module={toplevel} config={config} error={error!r}", flush=True)
         counts = {s: sum(t["status"] == s for t in tests) for s in ("PASS", "FAIL", "SKIP")}
         summary = {
             **base,

@@ -63,11 +63,20 @@ The same record goes to `sim/results/<module>/<config>/summary.json`.
 `regress.py` collects them all into `sim/results/regression.json` and prints
 `SYNTH_REGRESSION {...}`. `synth.py` prints `SYNTH_UTIL {...}`.
 
-**Write assert messages as `key=value` pairs**, so a failure can be
-triaged from `message` alone:
+Each failing test also prints one line in the triage format, for the
+testbench-triage agent (a companion project):
+
+```
+FAIL test=test_full_sweep t=15ns module=sine_rom config=default seed=1790771157 addr=1 expected=13 got=201
+```
+
+Everything after `seed=` is your assert message, which is why its form matters.
+
+**Write assert messages as `key=value` pairs, ending `expected=… got=…`**,
+so a failure can be triaged from the line alone:
 
 ```python
-assert actual == exp, f"cycle={cycle} voice={v} addr={a} got={actual} exp={exp}"
+assert actual == exp, f"cycle={cycle} addr={a} expected={exp} got={actual}"
 ```
 
 ## Helpers: `tb/synthtb/`
@@ -101,7 +110,8 @@ shapes are:
 
 | Model | Function |
 |---|---|
-| `sample_tick.py` | tick times for a given `CLK_HZ` and `SAMPLE_HZ` |
+| `nco.py` | sample sequence for an increment (reuse `next_phase` and `sine_table`) |
+| `i2s_tx.py` | expected pin waveform, or decode it in the test |
 | `midi_uart_rx.py` | not needed: the stimulus bytes are the expected values |
 | `midi_parser.py` | byte stream → list of events (running status, real-time, SysEx) |
 | `note_inc_rom.py` | `increment(note)`, `write_hex(...)`; `inc_recip(note)` in tier 3 |

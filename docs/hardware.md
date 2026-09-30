@@ -1,52 +1,95 @@
 # Hardware
 
-## FPGA board (not yet bought)
+## Board: Digilent Basys 3
 
-| Board | Cost | Toolchain | Fit |
-|---|---|---|---|
-| **Tang Nano 9K** (Gowin GW1NR-9) | ~£15–20 | Gowin IDE, or open-source Yosys + nextpnr | 20 multipliers and 26 BSRAM blocks: enough for 16 voices plus the filter. Cheapest board that won't run out |
-| iCE40 UP5K boards | ~£20–50 | fully open-source | 8 DSPs: fine for mono, tight for 16 voices with the SVF |
-| Arty A7 (Artix-7) | ~£200+ | Vivado | What job specs name; more than needed |
+Artix-7 `xc7a35tcpg236-1`, borrowed from the uni tech hub. 100 MHz oscillator
+on W5.
 
-The design stays vendor-neutral. `sim/synth.py --target xilinx` gives Artix-7
-utilisation without owning the board, which is worth quoting alongside the
-real board's numbers. Measured so far:
+## Signal chain
 
-| Module | iCE40 | Gowin | Xilinx 7 |
-|---|---|---|---|
-| `sine_rom` (1024×16) | 4 × SB_RAM40_4K | 1 × SPX9 (BSRAM) | 1 × RAMB18E1 |
-| `phase_accumulator` (32 bit) | 33 LUT4, 32 DFF, 31 carry | | |
+```
+Keystation Mini 32 / P-125 --USB--> Mac (tools/midi_bridge.py: mido -> pyserial)
+  --USB-UART (115200)--> Basys 3 [UART RX -> MIDI parser -> voices -> mixer -> I2S TX]
+  --Pmod JA--> MAX98357A I2S class-D amp --> passive speaker (4–8 Ω)
+```
 
-## MIDI input from the Yamaha P-125
+Both keyboards are USB MIDI devices, so the Mac acts as USB host and forwards
+raw MIDI bytes over the board's USB-UART. The RTL doesn't know which keyboard
+is connected. The P-125's sustain pedal arrives as CC64 over the same path.
 
-The P-125's MIDI is **USB-to-Host only** (no 5-pin DIN). It is a USB MIDI
-*device*, so something has to act as USB host. Implementing a USB host in the
-FPGA is its own project, so bridge it:
+## Pins
 
-| Option | Parts | Pros | Cons |
-|---|---|---|---|
-| **A. PC or Pi bridge** (bring-up) | USB-serial adapter, 3.3 V TTL (FTDI/CP2102, ~£5) | No soldering. Can log, replay recorded MIDI files, and inject test sequences. `BAUD` can be raised to 115 200 | Needs the computer on |
-| **B. USB-MIDI host box** (standalone) | Host-to-DIN adapter (~£30–60) + optocoupler input: 6N138 or H11L1, 220 Ω, 1N4148, pull-up to 3.3 V | Standalone instrument; standard MIDI electrical interface | Parts + a small circuit |
-| C. Raspberry Pi Pico as USB host | Pico (TinyUSB host MIDI) → UART | Cheap, standalone | Firmware to write |
+Checked against Digilent's `Basys-3-Master.xdc`.
 
-Recommendation: **A now, B for the demo.** The RTL is the same for both:
-`midi_uart_rx` takes `BAUD` as a parameter.
-
-For option A, the bridge script (`tools/midi_bridge.py`, to write) forwards
-raw MIDI bytes from the P-125's USB port to the serial port unchanged,
-including running status. That keeps the parser's job identical to DIN.
-
-**Sustain:** plug the pedal into the P-125. It sends CC64 over MIDI.
-**Active sensing (0xFE):** Yamaha instruments may send it about every 300 ms.
-The parser ignores it; a timeout that silences all notes when it stops is a
-possible extension.
-
-## Audio output
-
-| Option | Parts | Notes |
+| Signal | Basys 3 pin | Notes |
 |---|---|---|
-| 1-bit delta-sigma (first) | 1 kΩ + 10 nF RC (fc ≈ 16 kHz), 3.5 mm jack, DC-blocking cap | Nothing to buy; the output pin's supply noise limits quality |
-| I²S DAC (later) | PCM5102A breakout (~£5–10) | Proper 16/24-bit audio; recommended for the demo recording |
+| `clk` | W5 | 100 MHz; `create_clock -period 10.00` |
+| `uart_rx` | B18 | USB-UART RX (`RsRx` in the master XDC) |
+| `led[0]` | U16 | blinky / debug |
+| `i2s_bclk` | JA1 = J1 | → amp BCLK |
+| `i2s_lrclk` | JA2 = L2 | → amp LRC |
+| `i2s_data` | JA3 = J2 | → amp DIN |
+| GND / 3.3 V | JA pin 5 / 6 | → amp GND / Vin |
 
-Never drive headphones directly from an FPGA pin. Go through the filter into
-a line input or an amplifier.
+All pins use `IOSTANDARD LVCMOS33`. The XDC also needs
+`set_property CONFIG_VOLTAGE 3.3 [current_design]` and
+`set_property CFGBVS VCCO [current_design]`.
+
+Amp GAIN and SD are left unconnected: 9 dB gain, (L+R)/2 mix (Adafruit board
+defaults). The amp's header pins must be soldered before use.
+
+## Clocking and sample rate
+
+| Quantity | Value |
+|---|---|
+| System clock | 100 MHz |
+| BCLK | 100 MHz / 32 = 3.125 MHz |
+| Frame | 64 BCLKs (2 × 32-bit slots) |
+| Sample rate fs | 3.125 MHz / 64 = **48 828.125 Hz** |
+| Clocks per sample | **2048** (exact): the time-multiplexing budget |
+
+The sample tick comes from the I²S frame (once per LRCLK period), so the
+synth and the output can never drift. Every increment table uses this exact
+fs: `increment = round(f × 2^32 / 48828.125)`.
+
+## Toolchain
+
+- **Simulation:** cocotb + Verilator on the Mac.
+- **Build:** openXC7 via FPGAwars/tools-openxc7 (release 2026-09-24,
+  darwin-arm64, plus the `xc7a35tcpg236` chip database), installed in
+  `~/tools/openxc7`. Synthesis uses `yowasp-yosys`. Fallback: Vivado on the
+  uni lab PCs.
+
+  ```
+  make bit TOP=<module>     # python sim/fpga.py build <module> -> build/<module>/<module>.bit
+  ```
+
+  Pins come from `constraints/basys3.xdc`; lines for ports the top module
+  doesn't have are dropped automatically. The build prints cell counts and
+  the maximum clock frequency (it must be at least 100 MHz). Do **not** `source
+  ~/tools/openxc7/environment`: it overrides `VERILATOR_ROOT` and breaks the
+  simulator; `sim/fpga.py` calls the tools by path instead.
+- **Program:** `openFPGALoader` (Homebrew, v1.1.1).
+
+  ```
+  make prog TOP=<module>    # SRAM: lost at power-off
+  make flash TOP=<module>   # flash: survives power-off
+  ```
+
+Checked 2026-09-30 with a throwaway counter design: the build takes about
+5 s and reaches 298 MHz, and `clk` and `led[0]` land on W5 and U16. Programming
+is untested until the board is connected.
+
+## Still to buy / sort
+
+- Keystation Mini 32
+- Passive speaker, 4–8 Ω, about 3 W
+- Male-to-female jumper wires
+- The amp's header pins fitted (tech hub)
+
+## Not used
+
+- Teensy 4.1 + Audio Shield Rev D (borrowed; its USB host header can't be
+  soldered).
+- Possibly later: a Pi Pico H + OTG adapter as a standalone USB-MIDI host →
+  UART into a Pmod pin, to remove the Mac from the chain.
