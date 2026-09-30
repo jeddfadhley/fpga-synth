@@ -26,6 +26,7 @@ Checked against Digilent's `Basys-3-Master.xdc`.
 | `clk` | W5 | 100 MHz; `create_clock -period 10.00` |
 | `uart_rx` | B18 | USB-UART RX (`RsRx` in the master XDC) |
 | `led[0]` | U16 | blinky / debug |
+| `rst` | U18 | centre button `btnC`, active-high |
 | `i2s_bclk` | JA1 = J1 | → amp BCLK |
 | `i2s_lrclk` | JA2 = L2 | → amp LRC |
 | `i2s_data` | JA3 = J2 | → amp DIN |
@@ -76,9 +77,9 @@ fs: `increment = round(f × 2^32 / 48828.125)`.
   make flash TOP=<module>   # flash: survives power-off
   ```
 
-Checked 2026-09-30 with a throwaway counter design: the build takes about
-5 s and reaches 298 MHz, and `clk` and `led[0]` land on W5 and U16. Programming
-is untested until the board is connected.
+Checked 2026-09-30: blinky builds in about 5 s (266 MHz max against the
+100 MHz needed), `clk`, `rst` and `led[0]` land on W5, U18 and U16, and it
+runs on the board: LED0 blinks at 1 Hz and btnC resets it.
 
 ## Still to buy / sort
 

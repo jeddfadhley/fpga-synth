@@ -9,10 +9,10 @@ Python reference model.
 
 | Tier | Block | Status |
 |---|---|---|
-| 1 | Blinky on the Basys 3 (toolchain check) | Next |
+| 1 | Blinky on the Basys 3 (toolchain check) | Done: runs on the board |
 | 1 | Phase accumulator | Done: RTL, model, tests |
 | 1 | Sine wavetable ROM | Done: RTL, model, tests (non-default width run pending) |
-| 1 | I²S transmitter + sample tick, mono NCO: **first sound** | Planned |
+| 1 | I²S transmitter + sample tick, mono NCO: **first sound** | Next |
 | 1 | Note-to-increment ROM, UART RX, MIDI parser, Mac MIDI bridge | Planned |
 | 1 | Envelope, VCA | Planned |
 | 2 | RAM for per-voice state | Done: RTL, tests |
