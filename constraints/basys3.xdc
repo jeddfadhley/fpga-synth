@@ -15,8 +15,9 @@ set_property -dict { PACKAGE_PIN U18 IOSTANDARD LVCMOS33 } [get_ports rst]
 ## LEDs
 set_property -dict { PACKAGE_PIN U16 IOSTANDARD LVCMOS33 } [get_ports {led[0]}]
 
-## USB-UART (from the Mac MIDI bridge)
-set_property -dict { PACKAGE_PIN B18 IOSTANDARD LVCMOS33 } [get_ports uart_rx]
+## MIDI in: Teensy 4.1 Serial1 TX on Pmod JB1 (GND on JB pin 5).
+## For the Mac bridge fallback use B18 (USB-UART RsRx) instead.
+set_property -dict { PACKAGE_PIN A14 IOSTANDARD LVCMOS33 } [get_ports uart_rx]
 
 ## I2S to the MAX98357A on Pmod JA (JA1-3); amp GND/Vin on JA pins 5/6
 set_property -dict { PACKAGE_PIN J1  IOSTANDARD LVCMOS33 } [get_ports i2s_bclk]

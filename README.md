@@ -13,19 +13,19 @@ Python reference model.
 | 1 | Phase accumulator | Done: RTL, model, tests |
 | 1 | Sine wavetable ROM | Done: RTL, model, tests (non-default width run pending) |
 | 1 | I²S transmitter + sample tick, mono NCO: **first sound** | Next |
-| 1 | Note-to-increment ROM, UART RX, MIDI parser, Mac MIDI bridge | Planned |
+| 1 | Note-to-increment ROM, UART RX, MIDI parser, Teensy MIDI bridge | Planned |
 | 1 | Envelope, VCA | Planned |
 | 2 | RAM for per-voice state | Done: RTL, tests |
 | 2 | Polyphony: time-multiplexed voices, allocation, stealing, sustain; mixer | Planned |
 | 3 | PolyBLEP, resonant filter, detune (stretch) | Optional |
 
 Hardware: Digilent Basys 3 (Artix-7), MAX98357A I²S amplifier, played from a
-Keystation Mini 32 or Yamaha P-125 through a small Mac-side MIDI bridge.
+Keystation Mini 32 or Yamaha P-125 through a Teensy 4.1 acting as USB-MIDI host.
 
 ## Architecture
 
 ```
-Keyboard --USB--> Mac (MIDI bridge) --UART--> Basys 3:
+Keyboard --USB--> Teensy 4.1 (USB-MIDI host) --UART--> Basys 3:
   UART RX -> MIDI parser -> voices -> mixer -> I2S TX --> MAX98357A amp --> speaker
 ```
 

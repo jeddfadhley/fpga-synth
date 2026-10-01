@@ -90,7 +90,7 @@ Consequences:
 
 - **`midi_uart_rx`** synchronises the asynchronous input (two flip-flops,
   because metastability is real) and decodes 8N1 at `BAUD` (31 250 for DIN
-  MIDI; the PC bridge may run faster).
+  MIDI and the Teensy bridge; a PC bridge may run faster).
 - **`midi_parser`** handles running status, real-time bytes (0xF8–0xFF) that
   can arrive between the bytes of a message, SysEx skipping, note-on with
   velocity 0 treated as note-off, and control changes. It emits one event per
@@ -138,9 +138,9 @@ polyphony. Each milestone is a result you can put on a CV.
    **→ Milestone A: first sound.** A fixed A4 through the amp.
 4. **`note_inc_rom`** from a Python generator in `model/`, using fs =
    48 828.125.
-5. **`midi_uart_rx` + `midi_parser`** (`BAUD` a parameter: 115 200 from the Mac
-   bridge, 31 250 for real MIDI later), plus `tools/midi_bridge.py` (mido in,
-   pyserial out). **→ Milestone B: keys change the note.**
+5. **`midi_uart_rx` + `midi_parser`** (`BAUD` a parameter: 31 250 from the
+   Teensy bridge, the DIN MIDI rate), plus `tools/teensy_midi_bridge/`
+   (USB-MIDI host in, `Serial1` out). **→ Milestone B: keys change the note.**
 6. **Envelope:** `envelope_exp` + `vca`. The mono synth is complete; a video
    of it playing goes on the CV.
 
@@ -157,5 +157,5 @@ filter), wavetable morphing, unison/detune.
 
 ## Hardware
 
-See `docs/hardware.md`: the Basys 3, pins, clocking, the Mac MIDI bridge
+See `docs/hardware.md`: the Basys 3, pins, clocking, the Teensy MIDI bridge
 (Keystation Mini 32 or P-125) and the I²S amp.

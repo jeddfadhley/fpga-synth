@@ -146,7 +146,7 @@ frame is issued is an error. **Assumption-breaking:** `NUM_VOICES = 1`
 
 | Parameter | Meaning |
 |---|---|
-| `CLK_HZ`, `BAUD` | 31 250 for DIN MIDI; a PC/Pi bridge may use 115 200 |
+| `CLK_HZ`, `BAUD` | 31 250 for DIN MIDI and the Teensy bridge; a PC bridge may use 115 200 |
 
 | Port | Dir | Width | Notes |
 |---|---|---|---|
@@ -478,7 +478,7 @@ vendor primitive lives only there.
 | Port | Dir | Notes |
 |---|---|---|
 | `clk`, `rst` | in | |
-| `uart_rx` | in | asynchronous; from the Mac bridge via the USB-UART |
+| `uart_rx` | in | asynchronous; from the Teensy bridge on Pmod JB1 |
 | `wave_sel`, envelope coefs | in | constants at first; later from CCs. *(tier 3: `cutoff_f`, `damping_q`, `filter_mode`)* |
 | `i2s_bclk`, `i2s_lrclk`, `i2s_data` | out | to the amp |
 | `mix_valid`, `mix_sample` | out | for the testbench (pitch/FFT checks) |
