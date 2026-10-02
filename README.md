@@ -11,7 +11,7 @@ Python reference model.
 |---|---|---|
 | 1 | Blinky on the Basys 3 (toolchain check) | Done: runs on the board |
 | 1 | Phase accumulator | Done: RTL, model, tests |
-| 1 | Sine wavetable ROM | Done: RTL, model, tests (non-default width run pending) |
+| 1 | Sine wavetable ROM | Done: RTL, model, tests |
 | 1 | I²S transmitter + sample tick | In progress: RTL, tick-period test; pin-level I²S checks next |
 | 1 | Mono NCO + board top level: **first sound** | Next |
 | 1 | Note-to-increment ROM, UART RX, MIDI parser, Teensy MIDI bridge | Planned |
