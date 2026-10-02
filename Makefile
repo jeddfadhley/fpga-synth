@@ -5,7 +5,7 @@
 PY ?= python3
 M  ?=
 C  ?= default
-T  ?= ice40
+T  ?= xilinx
 TOP ?=
 
 .PHONY: help test regress lint synth bit prog flash waves clean
@@ -14,7 +14,7 @@ help:
 	@echo "make test M=<module> [C=<config>]   run one module's tests"
 	@echo "make regress                         lint + test every active module"
 	@echo "make lint                            lint only"
-	@echo "make synth M=<module> [T=ice40|gowin|xilinx|generic]"
+	@echo "make synth M=<module> [T=xilinx|ice40|gowin|generic]"
 	@echo "make bit TOP=<module>                Basys 3 bitstream (openXC7) -> build/<module>/"
 	@echo "make prog TOP=<module>               load it onto the Basys 3 (SRAM)"
 	@echo "make flash TOP=<module>              write it to the Basys 3 flash"

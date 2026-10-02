@@ -12,7 +12,8 @@ Python reference model.
 | 1 | Blinky on the Basys 3 (toolchain check) | Done: runs on the board |
 | 1 | Phase accumulator | Done: RTL, model, tests |
 | 1 | Sine wavetable ROM | Done: RTL, model, tests (non-default width run pending) |
-| 1 | I²S transmitter + sample tick, mono NCO: **first sound** | Next |
+| 1 | I²S transmitter + sample tick | In progress: RTL, tick-period test; pin-level I²S checks next |
+| 1 | Mono NCO + board top level: **first sound** | Next |
 | 1 | Note-to-increment ROM, UART RX, MIDI parser, Teensy MIDI bridge | Planned |
 | 1 | Envelope, VCA | Planned |
 | 2 | RAM for per-voice state | Done: RTL, tests |
@@ -24,9 +25,20 @@ Keystation Mini 32 or Yamaha P-125 through a Teensy 4.1 acting as USB-MIDI host.
 
 ## Architecture
 
-```
-Keyboard --USB--> Teensy 4.1 (USB-MIDI host) --UART--> Basys 3:
-  UART RX -> MIDI parser -> voices -> mixer -> I2S TX --> MAX98357A amp --> speaker
+```mermaid
+flowchart LR
+    kbd["USB MIDI keyboard<br/>Keystation Mini 32 / P-125"] -- USB --> teensy["Teensy 4.1<br/>USB-MIDI host"]
+    teensy -- "UART<br/>31 250 baud" --> uart
+
+    subgraph fpga["Basys 3 (Artix-7, 100 MHz)"]
+        direction LR
+        uart["UART RX"] --> midi["MIDI parser"] --> alloc["Voice allocator"]
+        alloc --> voices["Voice pipeline<br/>NCO → envelope → VCA<br/>time-multiplexed, N voices"]
+        voices --> mixer["Mixer"] --> i2s["I²S TX"]
+        i2s -. "sample tick<br/>every 2048 clocks" .-> voices
+    end
+
+    i2s -- "BCLK / LRCLK / DATA<br/>Pmod JA" --> amp["MAX98357A<br/>I²S amp"] --> spk(["Speaker"])
 ```
 
 The 100 MHz clock gives exactly 2048 clocks per sample (fs = 48 828.125 Hz, set
@@ -71,12 +83,24 @@ python3 sim/run.py sine_rom                      # one module, default config
 python3 sim/run.py phase_accumulator --config w24
 python3 sim/run.py sine_rom --seed 1790588464    # replay a random run
 python3 sim/regress.py                           # lint + every module, every config
-python3 sim/synth.py sine_rom --target ice40     # resource use
+python3 sim/synth.py sine_rom --target xilinx    # resource use
 ```
 
 `make help` lists the same as make targets. Waveforms are written to
 `tb/dump.vcd` and can be viewed with [Surfer](https://surfer-project.org) or
 GTKWave.
+
+## Building for the board
+
+The bitstream is built with [openXC7](https://github.com/openXC7) (yosys +
+nextpnr-xilinx); Vivado works as a fallback. Pins are in
+`constraints/basys3.xdc`.
+
+```
+make bit TOP=blinky      # bitstream -> build/blinky/
+make prog TOP=blinky     # load into the FPGA (SRAM, lost on power-off)
+make flash TOP=blinky    # write to the board's flash
+```
 
 ## Layout
 
@@ -86,7 +110,8 @@ rtl/mem/      generated ROM contents
 tb/           cocotb testbenches
 tb/synthtb/   shared test helpers (pitch/FFT, MIDI stimulus, slot monitor)
 model/        Python reference models
-sim/          runner, regression, synthesis scripts, module manifest
+sim/          runner, regression, synthesis and FPGA build scripts, module manifest
+constraints/  Basys 3 pin constraints
 docs/         architecture, interfaces, verification, hardware
 ```
 
