@@ -57,6 +57,7 @@ MODULES: dict[str, Module] = {
     "i2s_tx": Module(
         sources=rtl("i2s_tx"),
         configs={"default": {}, "slot16": {"SLOT_W": 16}, "fast_bclk": {"BCLK_DIV": 4}},
+        status="active",
     ),
     "nco": Module(
         sources=rtl("phase_accumulator", "sine_rom", "nco"),
