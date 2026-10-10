@@ -12,6 +12,11 @@ Fields:
            String values that name an existing file are made absolute by run.py.
   requires files that must exist for a config to run (e.g. a generated table);
            regress.py reports the config as SKIP with the reason if one is missing
+  tb       a Verilog testbench (e.g. "tb/tb_<module>.v") to run instead of the
+           cocotb test_<module>.py; its top module must be named after the
+           file. Configs are applied to that top as -G overrides, so they only
+           reach the DUT if the testbench declares them as `parameter`s.
+           Pass/fail protocol: see run_verilog_tb() in run.py
   status   "active" (in the regression), "planned" (spec only, see
            docs/interfaces.md) or "optional" (tier 3: only if
            time allows)
@@ -26,6 +31,7 @@ class Module:
     sources: list[str]
     configs: dict[str, dict] = field(default_factory=lambda: {"default": {}})
     requires: dict[str, list[str]] = field(default_factory=dict)
+    tb: str | None = None
     status: str = "planned"
     tier: int = 1
 
@@ -77,7 +83,7 @@ MODULES: dict[str, Module] = {
     # ---- control plane ---------------------------------------------------
     "midi_uart_rx": Module(
         sources=rtl("midi_uart_rx"),
-        configs={"default": {}, "fast_bridge": {"BAUD": 115_200}},
+        tb="tb/tb_midi_uart_rx.v",  # baud is a localparam there; no -G configs
     ),
     "midi_parser": Module(sources=rtl("midi_parser")),
     "note_inc_rom": Module(sources=rtl("note_inc_rom")),

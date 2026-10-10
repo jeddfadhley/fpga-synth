@@ -32,6 +32,9 @@ assert message (write asserts as key=value pairs, e.g. expected=.. got=..):
 
     FAIL test=<name> t=<sim time>ns module=<m> config=<c> seed=<n> <assert message>
 
+A module whose manifest entry sets `tb` (a Verilog testbench) is built with
+`verilator --binary --timing` and run directly instead; see run_verilog_tb().
+
 The same data is written to sim/results/<toplevel>/<config>/summary.json.
 Exit code: 0 all passed, 1 a test failed, 2 build error, crash or timeout.
 The schema is described in docs/verification.md.
@@ -41,7 +44,9 @@ import argparse
 import json
 import multiprocessing
 import os
+import re
 import signal
+import subprocess
 import sys
 import time
 import xml.etree.ElementTree as ET
@@ -196,6 +201,66 @@ def parse_results(results_xml: Path) -> tuple[list[dict], int | None]:
     return tests, seed
 
 
+VERILATOR = Path(sys.executable).parent / "verilator"
+VERILOG_FAIL = re.compile(r"^\s*(?:FAIL|fail)\b[\s:]*(.*)$")
+VERILOG_TIME = re.compile(r"\bt=(\d+)")
+
+
+def run_verilog_tb(spec: Module, params: dict, build_dir: Path, log_file: Path,
+                   timeout_s: float) -> tuple[list[dict], str | None, list[str]]:
+    """Build and run a plain Verilog testbench; returns (tests, error, details).
+
+    The testbench is one test, named after its top module. Protocol:
+      - each line starting "FAIL" (or "fail") is one failure; the rest of the
+        line is its message, ideally key=value pairs ending expected=.. got=..
+        and including t=<ns> so the triage line gets a time
+      - the test passes only if the simulation reaches $finish, prints a line
+        that is exactly "PASS", and prints no failure lines
+      - $error/$fatal or a non-zero exit is an ERROR
+    The DUT is linted with -Wall separately (regress.py); the testbench itself
+    is built with warnings non-fatal, since it is not synthesised.
+    """
+    tb = ROOT / spec.tb
+    top = tb.stem
+    verilator = str(VERILATOR if VERILATOR.exists() else "verilator")
+    cmd = [verilator, "--binary", "--timing", "-Wno-fatal", "-j", "0",
+           "--top-module", top, "--Mdir", str(build_dir), "-o", top]
+    cmd += [f"-G{k}={to_verilog(v)}" for k, v in params.items()]
+    cmd += [str(ROOT / s) for s in spec.sources] + [str(tb)]
+    build_dir.mkdir(parents=True, exist_ok=True)
+    proc = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT)
+    if proc.returncode != 0:
+        errors = [l for l in proc.stderr.splitlines() if l.startswith("%Error")]
+        return [], "build failed", errors[:10] or proc.stderr.splitlines()[-10:]
+
+    try:
+        proc = subprocess.run([str(build_dir / top)], capture_output=True, text=True,
+                              cwd=TB, timeout=timeout_s)
+    except subprocess.TimeoutExpired:
+        return [], f"timeout after {timeout_s:g} s", []
+    output = proc.stdout + proc.stderr
+    log_file.write_text(output)
+    sys.stdout.write(output)
+    if proc.returncode != 0:
+        return [], f"simulation exited with code {proc.returncode}", fatal_lines(log_file)
+
+    lines = output.splitlines()
+    fails = [m.group(1).strip() for l in lines if (m := VERILOG_FAIL.match(l))]
+    test = {"test": top, "sim_time_ns": 0.0, "file": spec.tb, "line": 0}
+    if fails:
+        tests = []
+        for msg in fails:
+            t = VERILOG_TIME.search(msg)
+            tests.append({**test, "status": "FAIL", "message": msg,
+                          "sim_time_ns": float(t.group(1)) if t else 0.0})
+        return tests, None, []
+    if not any(l.strip() == "PASS" for l in lines):
+        last = lines[-1].strip() if lines else ""
+        return [{**test, "status": "FAIL",
+                 "message": f"no PASS line printed; last_line={last!r}"}], None, []
+    return [{**test, "status": "PASS", "message": None}], None, []
+
+
 def replay_command(toplevel: str, test_module: str, config: str,
                    overrides: dict, seed: int | None) -> str:
     cmd = ["python3", "sim/run.py", toplevel]
@@ -223,9 +288,9 @@ def main() -> int:
     args = parser.parse_args()
 
     toplevel = args.toplevel
-    test_module = args.test_module or f"test_{toplevel}"
     spec = MODULES.get(toplevel, Module(sources=[f"rtl/{toplevel}.v"],
                                         configs={"default": {}}))
+    test_module = args.test_module or (Path(spec.tb).stem if spec.tb else f"test_{toplevel}")
     if args.config not in spec.configs:
         parser.error(f"{toplevel} has no config {args.config!r}; "
                      f"known: {', '.join(spec.configs)}")
@@ -273,8 +338,19 @@ def main() -> int:
         return {"PASS": 0, "FAIL": 1}.get(status, 2)
 
     missing = [s for s in spec.sources if not (ROOT / s).exists()]
+    if spec.tb and not (ROOT / spec.tb).exists():
+        missing.append(spec.tb)
     if missing:
         return finish("ERROR", [], None, "missing source files", missing)
+
+    if spec.tb:
+        tests, error, details = run_verilog_tb(
+            spec, params, ROOT / "sim_build" / toplevel / config,
+            out_dir / "sim.log", args.timeout)
+        if error or not tests:
+            return finish("ERROR", tests, None, error or "no test results", details)
+        status = "FAIL" if any(t["status"] == "FAIL" for t in tests) else "PASS"
+        return finish(status, tests, None, None, [])
 
     from cocotb_tools.runner import get_runner
 
