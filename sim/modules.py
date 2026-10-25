@@ -68,7 +68,10 @@ MODULES: dict[str, Module] = {
     "nco": Module(
         sources=rtl("phase_accumulator", "sine_rom", "nco"),
         configs={"default": {"INIT_FILE": SINE_1024x16},
-                 "p24": {"PHASE_W": 24, "INIT_FILE": SINE_1024x16}},
+                 "p24": {"PHASE_W": 24, "INIT_FILE": SINE_1024x16},
+                 "a8_d12": {"ADDR_W": 8, "DATA_W": 12, "INIT_FILE": SINE_256x12}},
+        requires={"a8_d12": [SINE_256x12]},
+        status="active",
     ),
     # ---- infrastructure --------------------------------------------------
     "voice_scheduler": Module(
