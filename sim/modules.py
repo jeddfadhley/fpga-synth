@@ -83,7 +83,11 @@ MODULES: dict[str, Module] = {
     # ---- control plane ---------------------------------------------------
     "midi_uart_rx": Module(
         sources=rtl("midi_uart_rx"),
-        tb="tb/tb_midi_uart_rx.v",  # baud is a localparam there; no -G configs
+        tb="tb/tb_midi_uart_rx.v",
+        configs={"default": {},
+                 "b115200": {"BAUD_RATE": 115200},       # CLK_FREQ/BAUD not an integer
+                 "b1M": {"BAUD_RATE": 1000000}},         # 100 clocks per bit: small counters
+        status="active",
     ),
     "midi_parser": Module(sources=rtl("midi_parser")),
     "note_inc_rom": Module(sources=rtl("note_inc_rom")),
